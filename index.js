@@ -1,17 +1,16 @@
 const fs = require("fs");
 const axios = require("axios");
 const path = require("path");
-const inquirer = require("inquirer");
 
 const config = {
   baseURL: "https://app-api.jp.stork-oracle.network/v1",
   authURL: "https://api.jp.stork-oracle.network/auth",
   tokenPath: path.join(__dirname, "tokens.json"),
-  intervalSeconds: 60, // Polling interval in seconds
+  intervalSeconds: 60,
   userAgent:
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
   origin: "chrome-extension://knnliglhgkmlblppdejchidfihjnockl",
-  maxRetries: 3, // Number of retries for failed requests
+  maxRetries: 3,
 };
 
 function getFormattedDate() {
@@ -94,13 +93,21 @@ async function runValidationProcess() {
     }
 
     log("Fetching signed price data...");
-    const validationData = await getSignedPrices(tokens);
-    if (!validationData || validationData.length === 0) {
+    const validationData = await fetchWithRetry(`${config.baseURL}/stork_signed_prices`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${tokens.accessToken}`,
+        "Content-Type": "application/json",
+        "User-Agent": config.userAgent,
+      },
+    });
+    
+    if (!validationData || !validationData.data || Object.keys(validationData.data).length === 0) {
       log("No validation data available.", "WARN");
     } else {
-      log(`Processing ${validationData.length} validation(s)...`);
-      for (const data of validationData) {
-        log(`Validating: ${data.asset} | Price: ${data.price} | Timestamp: ${data.timestamp}`);
+      log(`Processing ${Object.keys(validationData.data).length} validation(s)...`);
+      for (const assetKey in validationData.data) {
+        log(`Validating: ${assetKey} | Price: ${validationData.data[assetKey].price}`);
       }
     }
 
