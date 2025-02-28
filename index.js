@@ -52,6 +52,40 @@ async function getTokens() {
   }
 }
 
+async function refreshTokens(refreshToken) {
+  try {
+    log("🔄 Refreshing access token...");
+
+    const response = await axios.post(`${config.authURL}/refresh`, { refresh_token: refreshToken }, {
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": config.userAgent,
+        "Origin": config.origin,
+      },
+    });
+
+    if (!response.data || !response.data.access_token) {
+      throw new Error(`❌ Token refresh failed: ${response.status}`);
+    }
+
+    const tokens = {
+      accessToken: response.data.access_token,
+      idToken: response.data.id_token || "",
+      refreshToken: response.data.refresh_token || refreshToken,
+      isAuthenticated: true,
+      isVerifying: false,
+    };
+
+    await fs.promises.writeFile(config.tokenPath, JSON.stringify(tokens, null, 2), "utf8");
+    log("✅ Token refreshed successfully!");
+
+    return tokens;
+  } catch (error) {
+    log(`❌ Token refresh failed: ${error.message}`, "ERROR");
+    throw error;
+  }
+}
+
 async function runValidationProcess() {
   try {
     log("----- Starting Validation Process -----");
