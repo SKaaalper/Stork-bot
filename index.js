@@ -52,37 +52,35 @@ async function getTokens() {
   }
 }
 
-async function getSignedPrices(tokens) {
+async function refreshTokens(refreshToken) {
   try {
-    log("Fetching signed price data...");
-    const response = await axios.get(`${config.baseURL}/stork_signed_prices`, {
+    log("Refreshing access token...");
+    const response = await axios.post(`${config.authURL}/refresh`, { refresh_token: refreshToken }, {
       headers: {
-        "Authorization": `Bearer ${tokens.accessToken}`,
         "Content-Type": "application/json",
         "User-Agent": config.userAgent,
+        "Origin": config.origin,
       },
     });
 
-    if (response.status !== 200) {
-      log(`API response status: ${response.status}`, "WARN");
-      return [];
+    if (!response.data || !response.data.access_token) {
+      throw new Error(`Token refresh failed: ${response.status}`);
     }
 
-    const data = response.data.data;
-    if (!data) {
-      log("Invalid response format", "WARN");
-      return [];
-    }
+    const tokens = {
+      accessToken: response.data.access_token,
+      idToken: response.data.id_token || "",
+      refreshToken: response.data.refresh_token || refreshToken, // Use old refreshToken if none is returned
+      isAuthenticated: true,
+      isVerifying: false,
+    };
 
-    return Object.keys(data).map(assetKey => ({
-      asset: assetKey,
-      msg_hash: data[assetKey].timestamped_signature.msg_hash,
-      price: data[assetKey].price,
-      timestamp: new Date(data[assetKey].timestamped_signature.timestamp / 1000000).toISOString(),
-    }));
+    log("Token refreshed successfully!");
+    await fs.promises.writeFile(config.tokenPath, JSON.stringify(tokens, null, 2), "utf8");
+    return tokens;
   } catch (error) {
-    log(`Error fetching signed prices: ${error.message}`, "ERROR");
-    return [];
+    log(`Token refresh failed: ${error.message}`, "ERROR");
+    throw error;
   }
 }
 
@@ -96,6 +94,11 @@ async function getUserStats(tokens) {
         "User-Agent": config.userAgent,
       },
     });
+    if (response.status === 401) {
+      log("Access token expired, attempting refresh...", "WARN");
+      tokens = await refreshTokens(tokens.refreshToken);
+      return getUserStats(tokens);
+    }
     if (response.status !== 200) {
       log(`API response status: ${response.status}`, "WARN");
       return null;
@@ -110,32 +113,12 @@ async function getUserStats(tokens) {
 async function runValidationProcess() {
   try {
     log("----- Starting Validation Process -----");
-    const tokens = await getTokens();
+    let tokens = await getTokens();
     const userData = await getUserStats(tokens);
     if (userData) {
       log(`User Email: ${userData.email || "Unknown"}`);
       log(`Total Validations: ${userData.stats.stork_signed_prices_valid_count || 0}`);
     }
-
-    // Fetch validation data
-    const validationData = await getSignedPrices(tokens);
-    if (!validationData || validationData.length === 0) {
-      log("No validation data available.", "WARN");
-    } else {
-      log(`Processing ${validationData.length} validation(s)...`);
-      for (const data of validationData) {
-        log(`Validating: ${data.asset} | Price: ${data.price} | Timestamp: ${data.timestamp}`);
-      }
-    }
-
-    // Interval countdown before the next run
-    log(`Next validation in ${config.intervalSeconds} seconds...`);
-    for (let i = config.intervalSeconds; i > 0; i--) {
-      process.stdout.write(`\rWaiting: ${i}s `);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-    console.log(""); // Line break after countdown
-
   } catch (error) {
     log(`Validation process stopped: ${error.message}`, "ERROR");
   }
@@ -155,4 +138,3 @@ async function startApp() {
 }
 
 startApp();
-
