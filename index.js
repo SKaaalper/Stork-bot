@@ -82,6 +82,26 @@ async function runValidationProcess() {
       log(`User Email: ${userData.email || "Unknown"}`);
       log(`Total Validations: ${userData.stats.stork_signed_prices_valid_count || 0}`);
     }
+
+    // Fetch validation data
+    const validationData = await getSignedPrices(tokens);
+    if (!validationData || validationData.length === 0) {
+      log("No validation data available.", "WARN");
+    } else {
+      log(`Processing ${validationData.length} validation(s)...`);
+      for (const data of validationData) {
+        log(`Validating: ${data.asset} | Price: ${data.price} | Timestamp: ${data.timestamp}`);
+      }
+    }
+
+    // Interval countdown before the next run
+    log(`Next validation in ${config.intervalSeconds} seconds...`);
+    for (let i = config.intervalSeconds; i > 0; i--) {
+      process.stdout.write(`\rWaiting: ${i}s `);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    console.log(""); // Line break after countdown
+
   } catch (error) {
     log(`Validation process stopped: ${error.message}`, "ERROR");
   }
@@ -101,4 +121,3 @@ async function startApp() {
 }
 
 startApp();
-
