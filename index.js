@@ -52,6 +52,40 @@ async function getTokens() {
   }
 }
 
+async function getSignedPrices(tokens) {
+  try {
+    log("Fetching signed price data...");
+    const response = await axios.get(`${config.baseURL}/stork_signed_prices`, {
+      headers: {
+        "Authorization": `Bearer ${tokens.accessToken}`,
+        "Content-Type": "application/json",
+        "User-Agent": config.userAgent,
+      },
+    });
+
+    if (response.status !== 200) {
+      log(`API response status: ${response.status}`, "WARN");
+      return [];
+    }
+
+    const data = response.data.data;
+    if (!data) {
+      log("Invalid response format", "WARN");
+      return [];
+    }
+
+    return Object.keys(data).map(assetKey => ({
+      asset: assetKey,
+      msg_hash: data[assetKey].timestamped_signature.msg_hash,
+      price: data[assetKey].price,
+      timestamp: new Date(data[assetKey].timestamped_signature.timestamp / 1000000).toISOString(),
+    }));
+  } catch (error) {
+    log(`Error fetching signed prices: ${error.message}`, "ERROR");
+    return [];
+  }
+}
+
 async function getUserStats(tokens) {
   try {
     log("Fetching user stats...");
@@ -121,3 +155,4 @@ async function startApp() {
 }
 
 startApp();
+
