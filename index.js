@@ -11,6 +11,7 @@ const config = {
   userAgent:
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
   origin: "chrome-extension://knnliglhgkmlblppdejchidfihjnockl",
+  maxRetries: 3, // Number of retries for failed requests
 };
 
 function getFormattedDate() {
@@ -30,6 +31,22 @@ function showBanner() {
   console.log(`==========================================\n`);
 }
 
+async function fetchWithRetry(url, options, retries = config.maxRetries) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await axios(url, options);
+      return response;
+    } catch (error) {
+      if (i < retries - 1) {
+        log(`Retrying request (${i + 1}/${retries}) due to error: ${error.message}`, "WARN");
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      } else {
+        throw error;
+      }
+    }
+  }
+}
+
 async function getTokensAndStats() {
   try {
     log(`Reading token file: ${config.tokenPath}...`);
@@ -46,7 +63,8 @@ async function getTokensAndStats() {
 
     log(`Successfully read access token: ${tokens.accessToken.substring(0, 10)}...`);
     log("Fetching user stats...");
-    const response = await axios.get(`${config.baseURL}/me`, {
+    const response = await fetchWithRetry(`${config.baseURL}/me`, {
+      method: "GET",
       headers: {
         "Authorization": `Bearer ${tokens.accessToken}`,
         "Content-Type": "application/json",
