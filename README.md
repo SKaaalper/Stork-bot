@@ -22,9 +22,13 @@ npm install inquirer
 nano tokens.json
 ```
  ➕ Add Access Token Start with: eyjjug
+ 
  ➕ Add idToken Start with: eyfadf
+ 
  ➕ Add refresh token start with: eyfafad
+ 
  ➕ To obtain **Access Token**,**idtoken**,**refresh token** ▶️ Click Mouse 2 Stork Extension node ▶️ Click Inspect ▶️ Click Application ▶️ Click Extension Storage ▶️ Click Local And Copy!
+ 
  ➕ Save the file **(CTRL + X,then Y, then Enter)**
 
 ![image](https://github.com/user-attachments/assets/0351ab1a-9f1d-472b-ad76-6354b21bd85a)
