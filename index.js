@@ -30,24 +30,25 @@ function showBanner() {
   console.log(`==========================================\n`);
 }
 
-async function getUserStats(tokens) {
+async function getTokens() {
   try {
-    log("Fetching user stats...");
-    const response = await axios.get(`${config.baseURL}/me`, {
-      headers: {
-        "Authorization": `Bearer ${tokens.accessToken}`,
-        "Content-Type": "application/json",
-        "User-Agent": config.userAgent,
-      },
-    });
-    if (response.status !== 200) {
-      log(`API response status: ${response.status}`, "WARN");
-      return null;
+    log(`Reading token file: ${config.tokenPath}...`);
+    if (!fs.existsSync(config.tokenPath)) {
+      throw new Error(`Token file not found: ${config.tokenPath}`);
     }
-    return response.data.data;
+    
+    const tokensData = await fs.promises.readFile(config.tokenPath, "utf8");
+    const tokens = JSON.parse(tokensData);
+    
+    if (!tokens.accessToken || tokens.accessToken.length < 20) {
+      throw new Error("Invalid access token (too short or empty)");
+    }
+
+    log(`Successfully read access token: ${tokens.accessToken.substring(0, 10)}...`);
+    return tokens;
   } catch (error) {
-    log(`Error fetching user stats: ${error.message}`, "ERROR");
-    return null;
+    log(`Error reading token: ${error.message}`, "ERROR");
+    throw error;
   }
 }
 
