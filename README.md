@@ -14,8 +14,8 @@ git clone https://github.com/SKaaalper/Stork-bot.git && cd Stork-bot
 2️⃣ Install dependencies:
 ```
 npm install
-npm install inquirer
 ```
+
 3️⃣  Create and fill in the `tokens.json` file:
 - If the `tokens.json` file does not exist, the program will automatically create a template file. You need to copy the tokens from the Stork Verify application's localStorage and paste them into `tokens.json`.
 ```
