@@ -43,7 +43,9 @@ screen -S stork-bot
 node index.js
 ```
 ➕ to detach screen **Ctrl + A, Then Click D**
+
 ➕ to Attach `screen -r stork-bot`
+
 
 ⚠️ Note:
 This bot is for educational purposes only. Use at your own risk and ensure compliance with Stork's terms of service.
