@@ -10,129 +10,114 @@ const config = {
   userAgent:
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
   origin: "chrome-extension://knnliglhgkmlblppdejchidfihjnockl",
-  maxRetries: 3,
 };
 
-function getFormattedDate() {
-  const now = new Date();
-  return now.toISOString().replace("T", " ").substr(0, 19);
+function getTimestamp() {
+  return new Date().toISOString().replace("T", " ").substr(0, 19);
 }
 
-function log(message, type = "INFO") {
-  console.log(`[${getFormattedDate()}] [${type}] ${message}`);
+function log(message, type = "INFO", email = "N/A") {
+  console.log(`[${getTimestamp()}] [${type}] [User: ${email}] ${message}`);
 }
 
-function showBanner() {
-  console.log(`\n==========================================`);
-  console.log(`=             Stork Auto Bot           =`);
-  console.log(`=                                      =`);
-  console.log(`=               Batang Eds             =`);
-  console.log(`==========================================\n`);
-}
-
-async function fetchWithRetry(url, options, retries = config.maxRetries) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await axios(url, options);
-      return response;
-    } catch (error) {
-      if (i < retries - 1) {
-        log(`Retrying request (${i + 1}/${retries}) due to error: ${error.message}`, "WARN");
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } else {
-        throw error;
-      }
-    }
-  }
-}
-
-async function getTokensAndStats() {
+async function getTokens() {
   try {
-    log(`Reading token file: ${config.tokenPath}...`);
     if (!fs.existsSync(config.tokenPath)) {
       throw new Error(`Token file not found: ${config.tokenPath}`);
     }
-    
     const tokensData = await fs.promises.readFile(config.tokenPath, "utf8");
     const tokens = JSON.parse(tokensData);
-    
     if (!tokens.accessToken || tokens.accessToken.length < 20) {
       throw new Error("Invalid access token (too short or empty)");
     }
-
-    log(`Successfully read access token: ${tokens.accessToken.substring(0, 10)}...`);
-    log("Fetching user stats...");
-    const response = await fetchWithRetry(`${config.baseURL}/me`, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${tokens.accessToken}`,
-        "Content-Type": "application/json",
-        "User-Agent": config.userAgent,
-      },
-    });
-    if (response.status !== 200) {
-      log(`API response status: ${response.status}`, "WARN");
-      return { tokens, userData: null };
-    }
-    return { tokens, userData: response.data.data };
+    log(`Access token loaded successfully`);
+    return tokens;
   } catch (error) {
-    log(`Error fetching user stats: ${error.message}`, "ERROR");
-    return { tokens: null, userData: null };
+    log(`Error reading tokens: ${error.message}`, "ERROR");
+    throw error;
   }
 }
 
-async function runValidationProcess() {
+async function saveTokens(tokens) {
   try {
-    log("----- Starting Validation Process -----");
-    let { tokens, userData } = await getTokensAndStats();
-    if (!tokens) throw new Error("Failed to retrieve tokens");
-    
-    if (userData) {
-      log(`User Email: ${userData.email || "Unknown"}`);
-      log(`Total Validations: ${userData.stats.stork_signed_prices_valid_count || 0}`);
-    }
+    await fs.promises.writeFile(
+      config.tokenPath,
+      JSON.stringify(tokens, null, 2),
+      "utf8"
+    );
+    log("Tokens saved successfully");
+    return true;
+  } catch (error) {
+    log(`Error saving tokens: ${error.message}`, "ERROR");
+    return false;
+  }
+}
 
-    log("Fetching signed price data...");
-    const validationData = await fetchWithRetry(`${config.baseURL}/stork_signed_prices`, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${tokens.accessToken}`,
-        "Content-Type": "application/json",
-        "User-Agent": config.userAgent,
-      },
+async function refreshTokens(refreshToken) {
+  try {
+    log("Refreshing access token...");
+    const response = await axios.post(
+      `${config.authURL}/refresh`,
+      { refresh_token: refreshToken },
+      { headers: { "User-Agent": config.userAgent, "Origin": config.origin } }
+    );
+    if (!response.data || !response.data.access_token) {
+      throw new Error(`Token refresh failed: ${response.status}`);
+    }
+    const tokens = {
+      accessToken: response.data.access_token,
+      refreshToken: response.data.refresh_token || refreshToken,
+    };
+    log("Token refreshed successfully");
+    await saveTokens(tokens);
+    return tokens;
+  } catch (error) {
+    log(`Token refresh failed: ${error.message}`, "ERROR");
+    throw error;
+  }
+}
+
+async function getUserStats(tokens) {
+  try {
+    log("Fetching user stats...");
+    const response = await axios.get(`${config.baseURL}/me`, {
+      headers: { Authorization: `Bearer ${tokens.accessToken}` },
     });
-    
-    if (!validationData || !validationData.data || Object.keys(validationData.data).length === 0) {
-      log("No validation data available.", "WARN");
-    } else {
-      log(`Processing ${Object.keys(validationData.data).length} validation(s)...`);
-      for (const assetKey in validationData.data) {
-        log(`Validating: ${assetKey} | Price: ${validationData.data[assetKey].price}`);
-      }
+    if (response.status === 401) {
+      log("Access token expired, refreshing token...", "WARN");
+      tokens = await refreshTokens(tokens.refreshToken);
+      return await getUserStats(tokens);
     }
+    if (response.data && response.data.data) {
+      return response.data.data;
+    }
+    return null;
+  } catch (error) {
+    log(`Error fetching user stats: ${error.message}`, "ERROR");
+    return null;
+  }
+}
 
-    log(`Next validation in ${config.intervalSeconds} seconds...`);
-    for (let i = config.intervalSeconds; i > 0; i--) {
-      process.stdout.write(`\rWaiting: ${i}s `);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+async function validatePrices() {
+  try {
+    log("Starting validation process...");
+    let tokens = await getTokens();
+    const userData = await getUserStats(tokens);
+    if (!userData) {
+      log("Failed to fetch user stats", "ERROR");
+      return;
     }
-    console.log("");
+    log(`User Email: ${userData.email}`, "INFO", userData.email);
+    log(`Validations: ${userData.stats.stork_signed_prices_valid_count || 0}`, "INFO");
+    log(`Invalid Validations: ${userData.stats.stork_signed_prices_invalid_count || 0}`, "INFO");
   } catch (error) {
     log(`Validation process stopped: ${error.message}`, "ERROR");
   }
 }
 
-async function startApp() {
-  showBanner();
-  log(`==========================================`);
-  log(`STORK ORACLE Validator Bot Activated`);
-  log(`Interval: ${config.intervalSeconds} seconds`);
-  log(`Token Path: ${config.tokenPath}`);
-  log(`Auto-refresh: Enabled`);
-  log(`==========================================`);
-  
-  runValidationProcess();
-  setInterval(runValidationProcess, config.intervalSeconds * 1000);
+function startApp() {
+  log("STORK ORACLE Validator Bot Activated");
+  setInterval(validatePrices, config.intervalSeconds * 1000);
 }
 
 startApp();
