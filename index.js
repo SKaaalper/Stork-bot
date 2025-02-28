@@ -30,7 +30,7 @@ function showBanner() {
   console.log(`==========================================\n`);
 }
 
-async function getTokens() {
+async function getTokensAndStats() {
   try {
     log(`Reading token file: ${config.tokenPath}...`);
     if (!fs.existsSync(config.tokenPath)) {
@@ -45,18 +45,31 @@ async function getTokens() {
     }
 
     log(`Successfully read access token: ${tokens.accessToken.substring(0, 10)}...`);
-    return tokens;
+    log("Fetching user stats...");
+    const response = await axios.get(`${config.baseURL}/me`, {
+      headers: {
+        "Authorization": `Bearer ${tokens.accessToken}`,
+        "Content-Type": "application/json",
+        "User-Agent": config.userAgent,
+      },
+    });
+    if (response.status !== 200) {
+      log(`API response status: ${response.status}`, "WARN");
+      return { tokens, userData: null };
+    }
+    return { tokens, userData: response.data.data };
   } catch (error) {
-    log(`Error reading token: ${error.message}`, "ERROR");
-    throw error;
+    log(`Error fetching user stats: ${error.message}`, "ERROR");
+    return { tokens: null, userData: null };
   }
 }
 
 async function runValidationProcess() {
   try {
     log("----- Starting Validation Process -----");
-    let tokens = await getTokens();
-    const userData = await getUserStats(tokens);
+    let { tokens, userData } = await getTokensAndStats();
+    if (!tokens) throw new Error("Failed to retrieve tokens");
+    
     if (userData) {
       log(`User Email: ${userData.email || "Unknown"}`);
       log(`Total Validations: ${userData.stats.stork_signed_prices_valid_count || 0}`);
