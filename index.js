@@ -30,59 +30,24 @@ function showBanner() {
   console.log(`==========================================\n`);
 }
 
-async function getTokens() {
+async function getUserStats(tokens) {
   try {
-    log(`Reading token file: ${config.tokenPath}...`);
-    if (!fs.existsSync(config.tokenPath)) {
-      throw new Error(`Token file not found: ${config.tokenPath}`);
-    }
-    
-    const tokensData = await fs.promises.readFile(config.tokenPath, "utf8");
-    const tokens = JSON.parse(tokensData);
-    
-    if (!tokens.accessToken || tokens.accessToken.length < 20) {
-      throw new Error("Invalid access token (too short or empty)");
-    }
-
-    log(`Successfully read access token: ${tokens.accessToken.substring(0, 10)}...`);
-    return tokens;
-  } catch (error) {
-    log(`Error reading token: ${error.message}`, "ERROR");
-    throw error;
-  }
-}
-
-async function refreshTokens(refreshToken) {
-  try {
-    log("🔄 Refreshing access token...");
-
-    const response = await axios.post(`${config.authURL}/refresh`, { refresh_token: refreshToken }, {
+    log("Fetching user stats...");
+    const response = await axios.get(`${config.baseURL}/me`, {
       headers: {
+        "Authorization": `Bearer ${tokens.accessToken}`,
         "Content-Type": "application/json",
         "User-Agent": config.userAgent,
-        "Origin": config.origin,
       },
     });
-
-    if (!response.data || !response.data.access_token) {
-      throw new Error(`❌ Token refresh failed: ${response.status}`);
+    if (response.status !== 200) {
+      log(`API response status: ${response.status}`, "WARN");
+      return null;
     }
-
-    const tokens = {
-      accessToken: response.data.access_token,
-      idToken: response.data.id_token || "",
-      refreshToken: response.data.refresh_token || refreshToken,
-      isAuthenticated: true,
-      isVerifying: false,
-    };
-
-    await fs.promises.writeFile(config.tokenPath, JSON.stringify(tokens, null, 2), "utf8");
-    log("✅ Token refreshed successfully!");
-
-    return tokens;
+    return response.data.data;
   } catch (error) {
-    log(`❌ Token refresh failed: ${error.message}`, "ERROR");
-    throw error;
+    log(`Error fetching user stats: ${error.message}`, "ERROR");
+    return null;
   }
 }
 
