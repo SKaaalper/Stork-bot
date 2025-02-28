@@ -30,36 +30,24 @@ function showBanner() {
   console.log(`==========================================\n`);
 }
 
-async function refreshTokens(refreshToken) {
+async function getTokens() {
   try {
-    log("🔄 Refreshing access token...");
-
-    const response = await axios.post(`${config.authURL}/refresh`, { refresh_token: refreshToken }, {
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": config.userAgent,
-        "Origin": config.origin,
-      },
-    });
-
-    if (!response.data || !response.data.access_token) {
-      throw new Error(`❌ Token refresh failed: ${response.status}`);
+    log(`Reading token file: ${config.tokenPath}...`);
+    if (!fs.existsSync(config.tokenPath)) {
+      throw new Error(`Token file not found: ${config.tokenPath}`);
+    }
+    
+    const tokensData = await fs.promises.readFile(config.tokenPath, "utf8");
+    const tokens = JSON.parse(tokensData);
+    
+    if (!tokens.accessToken || tokens.accessToken.length < 20) {
+      throw new Error("Invalid access token (too short or empty)");
     }
 
-    const tokens = {
-      accessToken: response.data.access_token,
-      idToken: response.data.id_token || "",
-      refreshToken: response.data.refresh_token || refreshToken,
-      isAuthenticated: true,
-      isVerifying: false,
-    };
-
-    await fs.promises.writeFile(config.tokenPath, JSON.stringify(tokens, null, 2), "utf8");
-    log("✅ Token refreshed successfully!");
-
+    log(`Successfully read access token: ${tokens.accessToken.substring(0, 10)}...`);
     return tokens;
   } catch (error) {
-    log(`❌ Token refresh failed: ${error.message}`, "ERROR");
+    log(`Error reading token: ${error.message}`, "ERROR");
     throw error;
   }
 }
