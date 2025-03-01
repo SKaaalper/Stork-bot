@@ -14,11 +14,20 @@ const config = {
 };
 
 function getFormattedDate() {
-  return new Date().toISOString().replace("T", " ").substr(0, 19);
+  const now = new Date();
+  return now.toISOString().replace("T", " ").substr(0, 19);
 }
 
 function log(message, type = "INFO") {
   console.log(`[${getFormattedDate()}] [${type}] ${message}`);
+}
+
+function showBanner() {
+  console.log(`\n==========================================`);
+  console.log(`=             Stork Auto Bot           =`);
+  console.log(`=                                      =`);
+  console.log(`=               Batang Eds             =`);
+  console.log(`==========================================\n`);
 }
 
 async function fetchWithRetry(url, options, retries = config.maxRetries) {
@@ -37,47 +46,21 @@ async function fetchWithRetry(url, options, retries = config.maxRetries) {
   }
 }
 
-async function refreshToken() {
+async function getTokensAndStats() {
   try {
-    log("Refreshing access token...");
-    if (!fs.existsSync(config.tokenPath)) throw new Error("Token file not found");
+    log(`Reading token file: ${config.tokenPath}...`);
+    if (!fs.existsSync(config.tokenPath)) {
+      throw new Error(`Token file not found: ${config.tokenPath}`);
+    }
     
     const tokensData = await fs.promises.readFile(config.tokenPath, "utf8");
     const tokens = JSON.parse(tokensData);
     
-    if (!tokens.refreshToken) throw new Error("No refresh token found");
-
-    const response = await axios.post(config.authURL, { refreshToken: tokens.refreshToken }, {
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": config.userAgent,
-      },
-    });
-    
-    tokens.accessToken = response.data.accessToken;
-    await fs.promises.writeFile(config.tokenPath, JSON.stringify(tokens, null, 2));
-    log("Access token refreshed successfully.");
-    return tokens.accessToken;
-  } catch (error) {
-    log(`Error refreshing token: ${error.message}`, "ERROR");
-    return null;
-  }
-}
-
-async function getTokensAndStats() {
-  try {
-    log("Reading token file...");
-    if (!fs.existsSync(config.tokenPath)) throw new Error("Token file not found");
-    
-    const tokensData = await fs.promises.readFile(config.tokenPath, "utf8");
-    let tokens = JSON.parse(tokensData);
-    
     if (!tokens.accessToken || tokens.accessToken.length < 20) {
-      log("Invalid or expired access token. Attempting to refresh...");
-      tokens.accessToken = await refreshToken();
-      if (!tokens.accessToken) throw new Error("Failed to refresh access token");
+      throw new Error("Invalid access token (too short or empty)");
     }
 
+    log(`Successfully read access token: ${tokens.accessToken.substring(0, 10)}...`);
     log("Fetching user stats...");
     const response = await fetchWithRetry(`${config.baseURL}/me`, {
       method: "GET",
@@ -87,8 +70,10 @@ async function getTokensAndStats() {
         "User-Agent": config.userAgent,
       },
     });
-    if (response.status !== 200) throw new Error(`API response status: ${response.status}`);
-
+    if (response.status !== 200) {
+      log(`API response status: ${response.status}`, "WARN");
+      return { tokens, userData: null };
+    }
     return { tokens, userData: response.data.data };
   } catch (error) {
     log(`Error fetching user stats: ${error.message}`, "ERROR");
@@ -104,7 +89,7 @@ async function runValidationProcess() {
     
     if (userData) {
       log(`User Email: ${userData.email || "Unknown"}`);
-      log(`Total Validations: ${userData.stats?.stork_signed_prices_valid_count || 0}`);
+      log(`Total Validations: ${userData.stats.stork_signed_prices_valid_count || 0}`);
     }
 
     log("Fetching signed price data...");
@@ -117,12 +102,12 @@ async function runValidationProcess() {
       },
     });
     
-    if (!validationData.data || Object.keys(validationData.data).length === 0) {
+    if (!validationData || !validationData.data || Object.keys(validationData.data).length === 0) {
       log("No validation data available.", "WARN");
     } else {
       log(`Processing ${Object.keys(validationData.data).length} validation(s)...`);
       for (const assetKey in validationData.data) {
-        log(`Validating: ${assetKey} | Price: ${validationData.data[assetKey].price || "N/A"}`);
+        log(`Validating: ${assetKey} | Price: ${validationData.data[assetKey].price}`);
       }
     }
 
@@ -138,10 +123,14 @@ async function runValidationProcess() {
 }
 
 async function startApp() {
-  log("STORK ORACLE Validator Bot Activated");
+  showBanner();
+  log(`==========================================`);
+  log(`STORK ORACLE Validator Bot Activated`);
   log(`Interval: ${config.intervalSeconds} seconds`);
   log(`Token Path: ${config.tokenPath}`);
-  log("Auto-refresh: Enabled");
+  log(`Auto-refresh: Enabled`);
+  log(`==========================================`);
+  
   runValidationProcess();
   setInterval(runValidationProcess, config.intervalSeconds * 1000);
 }
