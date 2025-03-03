@@ -38,9 +38,32 @@ function log(message, type = "INFO") {
   console.log(`[${getFormattedDate()}] [${type}] ${message}`);
 }
 
-showBanner();
-
-log("Starting application...");
+async function refreshTokens(refreshToken) {
+  try {
+    log("Refreshing access token...");
+    const response = await axios({
+      method: "POST",
+      url: `${config.stork.authURL}/refresh`,
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": config.stork.userAgent,
+        "Origin": config.stork.origin,
+      },
+      data: { refresh_token: refreshToken },
+    });
+    const tokens = {
+      accessToken: response.data.access_token,
+      idToken: response.data.id_token || "",
+      refreshToken: response.data.refresh_token || refreshToken,
+    };
+    await fs.promises.writeFile(config.stork.tokenPath, JSON.stringify(tokens, null, 2), "utf8");
+    log("Successfully refreshed tokens and updated tokens.json");
+    return tokens;
+  } catch (error) {
+    log(`Token refresh failed: ${error.message}`, "ERROR");
+    throw error;
+  }
+}
 
 async function getUserStats(tokens) {
   try {
@@ -56,14 +79,21 @@ async function getUserStats(tokens) {
     });
     return response.data.data;
   } catch (error) {
+    if (error.response && error.response.status === 401) {
+      log("Access token expired, attempting to refresh...");
+      const tokensData = await fs.promises.readFile(config.stork.tokenPath, "utf8");
+      const tokens = JSON.parse(tokensData);
+      const newTokens = await refreshTokens(tokens.refreshToken);
+      return getUserStats(newTokens);
+    }
     log(`Error fetching user stats: ${error.message}`, "ERROR");
     return null;
   }
 }
 
 async function main() {
+  showBanner();
   log("Initializing bot...");
-  log("Checking tokens.json file...");
   if (!fs.existsSync(config.stork.tokenPath)) {
     log("tokens.json file not found! Please set up your tokens.", "ERROR");
     process.exit(1);
