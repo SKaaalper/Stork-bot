@@ -24,7 +24,7 @@ const config = {
 
 function showBanner() {
   console.log(`\n==========================================`);
-  console.log(`=            Kite AI Auto Bot            =`);
+  console.log(`=             Stork Auto Bot             =`);
   console.log(`=               Batang Eds               =`);
   console.log(`==========================================\n`);
 }
