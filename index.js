@@ -22,6 +22,14 @@ const config = {
   },
 };
 
+const COLORS = {
+  RESET: "\x1b[0m",
+  GREEN: "\x1b[32m",
+  RED: "\x1b[31m",
+  CYAN: "\x1b[36m",
+  YELLOW: "\x1b[33m",
+};
+
 function showBanner() {
   console.log(`\n==========================================`);
   console.log(`=             Stork Auto Bot             =`);
@@ -34,13 +42,13 @@ function getFormattedDate() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
 }
 
-function log(message, type = "INFO") {
-  console.log(`[${getFormattedDate()}] [${type}] ${message}`);
+function log(message, type = "INFO", color = COLORS.RESET) {
+  console.log(`${color}[${getFormattedDate()}] [${type}] ${message}${COLORS.RESET}`);
 }
 
 async function refreshTokens(refreshToken) {
   try {
-    log("Refreshing access token...");
+    log("Refreshing access token...", "INFO", COLORS.CYAN);
     const response = await axios({
       method: "POST",
       url: `${config.stork.authURL}/refresh`,
@@ -57,17 +65,17 @@ async function refreshTokens(refreshToken) {
       refreshToken: response.data.refresh_token || refreshToken,
     };
     await fs.promises.writeFile(config.stork.tokenPath, JSON.stringify(tokens, null, 2), "utf8");
-    log("Successfully refreshed tokens and updated tokens.json");
+    log("Successfully refreshed tokens and updated tokens.json", "INFO", COLORS.GREEN);
     return tokens;
   } catch (error) {
-    log(`Token refresh failed: ${error.message}`, "ERROR");
+    log(`Token refresh failed: ${error.message}`, "ERROR", COLORS.RED);
     throw error;
   }
 }
 
 async function getUserStats(tokens) {
   try {
-    log("Fetching user statistics...");
+    log("Fetching user statistics...", "INFO", COLORS.CYAN);
     const response = await axios({
       method: "GET",
       url: `${config.stork.baseURL}/me`,
@@ -80,47 +88,51 @@ async function getUserStats(tokens) {
     return response.data.data;
   } catch (error) {
     if (error.response && error.response.status === 401) {
-      log("Access token expired, attempting to refresh...");
+      log("Access token expired, attempting to refresh...", "WARN", COLORS.YELLOW);
       const tokensData = await fs.promises.readFile(config.stork.tokenPath, "utf8");
       const tokens = JSON.parse(tokensData);
       const newTokens = await refreshTokens(tokens.refreshToken);
       return getUserStats(newTokens);
     }
-    log(`Error fetching user stats: ${error.message}`, "ERROR");
+    log(`Error fetching user stats: ${error.message}`, "ERROR", COLORS.RED);
     return null;
   }
 }
 
 async function main() {
   showBanner();
-  log("Initializing bot...");
+  log("Initializing bot...", "INFO", COLORS.CYAN);
   if (!fs.existsSync(config.stork.tokenPath)) {
-    log("tokens.json file not found! Please set up your tokens.", "ERROR");
+    log("tokens.json file not found! Please set up your tokens.", "ERROR", COLORS.RED);
     process.exit(1);
   }
 
-  log("Starting Stork validation process...");
+  log("Starting Stork validation process...", "INFO", COLORS.CYAN);
   setInterval(async () => {
-    log("==========================================");
-    log("VERIFICATION ON", "INFO");
-    log("Fetching latest signed prices...");
-    log("Validating data...");
-    log("Submitting validation results...");
+    log("==========================================", "INFO");
+    log("VERIFICATION ON", "INFO", COLORS.YELLOW);
+    log("Fetching latest signed prices...", "INFO");
+    log("Validating data...", "INFO");
+    log("Submitting validation results...", "INFO");
     
     const tokensData = await fs.promises.readFile(config.stork.tokenPath, "utf8");
     const tokens = JSON.parse(tokensData);
     
     const userData = await getUserStats(tokens);
     if (userData) {
-      log("REPORTING", "INFO");
-      log(`📧 USER EMAIL: ${userData.email || "Unknown"}`);
-      log(`✔ VERIFIED MESSAGES: ${userData.stats.stork_signed_prices_valid_count || 0}`);
-      log(`✖ INVALID MESSAGES: ${userData.stats.stork_signed_prices_invalid_count || 0}`);
-      log("Validation Results:");
-      userData.stats.stork_signed_prices_validations.forEach((validation) => {
-        log(`🔹 ${validation.asset}: ${validation.price} USD | Status: ${validation.status}`);
-      });
-      log("==========================================");
+      log("REPORTING", "INFO", COLORS.CYAN);
+      log(`📧 USER EMAIL: ${userData.email || "Unknown"}`, "INFO", COLORS.GREEN);
+      log(`✔ VERIFIED MESSAGES: ${userData.stats?.stork_signed_prices_valid_count || 0}`, "INFO", COLORS.GREEN);
+      log(`✖ INVALID MESSAGES: ${userData.stats?.stork_signed_prices_invalid_count || 0}`, "INFO", COLORS.RED);
+      log("Validation Results:", "INFO", COLORS.CYAN);
+      if (userData.stats?.stork_signed_prices_validations) {
+        userData.stats.stork_signed_prices_validations.forEach((validation) => {
+          log(`🔹 ${validation.asset}: ${validation.price} USD | Status: ${validation.status}`, "INFO", COLORS.YELLOW);
+        });
+      } else {
+        log("No validation data available.", "INFO", COLORS.RED);
+      }
+      log("==========================================", "INFO");
     }
   }, config.stork.intervalSeconds * 1000);
 }
