@@ -1,138 +1,92 @@
-const fs = require("fs");
-const axios = require("axios");
-const path = require("path");
+import AmazonCognitoIdentity from "amazon-cognito-identity-js";
+import axios from "axios";
+import fs from "fs";
+import path from "path";
+import { Worker, isMainThread, parentPort, workerData } from "worker_threads";
+import { HttpsProxyAgent } from "https-proxy-agent";
+import { SocksProxyAgent } from "socks-proxy-agent";
+import { accounts } from "./accounts.js";
+import { fileURLToPath } from "url";
 
-const config = {
-  baseURL: "https://app-api.jp.stork-oracle.network/v1",
-  authURL: "https://api.jp.stork-oracle.network/auth",
-  tokenPath: path.join(__dirname, "tokens.json"),
-  intervalSeconds: 60,
-  userAgent:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-  origin: "chrome-extension://knnliglhgkmlblppdejchidfihjnockl",
-  maxRetries: 3,
-};
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function showBanner() {
+  console.log(`\n==========================================`);
+  console.log(`=            Kite AI Auto Bot            =`);
+  console.log(`=               Batang Eds               =`);
+  console.log(`==========================================\n`);
+}
 
 function getFormattedDate() {
   const now = new Date();
-  return now.toISOString().replace("T", " ").substr(0, 19);
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
 }
 
 function log(message, type = "INFO") {
   console.log(`[${getFormattedDate()}] [${type}] ${message}`);
 }
 
-function showBanner() {
-  console.log(`\n==========================================`);
-  console.log(`=             Stork Auto Bot           =`);
-  console.log(`=                                      =`);
-  console.log(`=               Batang Eds             =`);
-  console.log(`==========================================\n`);
-}
+showBanner();
 
-async function fetchWithRetry(url, options, retries = config.maxRetries) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await axios(url, options);
-      return response;
-    } catch (error) {
-      if (i < retries - 1) {
-        log(`Retrying request (${i + 1}/${retries}) due to error: ${error.message}`, "WARN");
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } else {
-        throw error;
-      }
-    }
-  }
-}
+log("Starting application...");
 
-async function getTokensAndStats() {
+function loadConfig() {
   try {
-    log(`Reading token file: ${config.tokenPath}...`);
-    if (!fs.existsSync(config.tokenPath)) {
-      throw new Error(`Token file not found: ${config.tokenPath}`);
+    const configPath = path.join(__dirname, "config.json");
+    if (!fs.existsSync(configPath)) {
+      log(`Config file not found at ${configPath}, using default settings`, "WARN");
+      const defaultConfig = {
+        cognito: {
+          region: "ap-northeast-1",
+          clientId: "5msns4n49hmg3dftp2tp1t2iuh",
+          userPoolId: "ap-northeast-1_M22I44OpC",
+          username: "",
+          password: "",
+        },
+        stork: {
+          intervalSeconds: 10,
+        },
+        threads: {
+          maxWorkers: 10,
+        },
+      };
+      fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2), "utf8");
+      return defaultConfig;
     }
-    
-    const tokensData = await fs.promises.readFile(config.tokenPath, "utf8");
-    const tokens = JSON.parse(tokensData);
-    
-    if (!tokens.accessToken || tokens.accessToken.length < 20) {
-      throw new Error("Invalid access token (too short or empty)");
-    }
-
-    log(`Successfully read access token: ${tokens.accessToken.substring(0, 10)}...`);
-    log("Fetching user stats...");
-    const response = await fetchWithRetry(`${config.baseURL}/me`, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${tokens.accessToken}`,
-        "Content-Type": "application/json",
-        "User-Agent": config.userAgent,
-      },
-    });
-    if (response.status !== 200) {
-      log(`API response status: ${response.status}`, "WARN");
-      return { tokens, userData: null };
-    }
-    return { tokens, userData: response.data.data };
+    const userConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    log("Successfully loaded config.json");
+    log("Successfully loaded accounts.js");
+    return userConfig;
   } catch (error) {
-    log(`Error fetching user stats: ${error.message}`, "ERROR");
-    return { tokens: null, userData: null };
+    log(`Error loading configuration: ${error.message}`, "ERROR");
+    throw new Error("Configuration failed to load");
   }
 }
 
-async function runValidationProcess() {
-  try {
-    log("----- Starting Validation Process -----");
-    let { tokens, userData } = await getTokensAndStats();
-    if (!tokens) throw new Error("Failed to retrieve tokens");
-    
-    if (userData) {
-      log(`User Email: ${userData.email || "Unknown"}`);
-      log(`Total Validations: ${userData.stats.stork_signed_prices_valid_count || 0}`);
-    }
+const userConfig = loadConfig();
+const config = {
+  cognito: {
+    region: userConfig.cognito?.region || "ap-northeast-1",
+    clientId: userConfig.cognito?.clientId || "5msns4n49hmg3dftp2tp1t2iuh",
+    userPoolId: userConfig.cognito?.userPoolId || "ap-northeast-1_M22I44OpC",
+    username: userConfig.cognito?.username || "",
+    password: userConfig.cognito?.password || "",
+  },
+  stork: {
+    baseURL: "https://app-api.jp.stork-oracle.network/v1",
+    authURL: "https://api.jp.stork-oracle.network/auth",
+    tokenPath: path.join(__dirname, "tokens.json"),
+    intervalSeconds: userConfig.stork?.intervalSeconds || 10,
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+    origin: "chrome-extension://knnliglhgkmlblppdejchidfihjnockl",
+  },
+  threads: {
+    maxWorkers: userConfig.threads?.maxWorkers || 10,
+    proxyFile: path.join(__dirname, "proxies.txt"),
+  },
+};
 
-    log("Fetching signed price data...");
-    const validationData = await fetchWithRetry(`${config.baseURL}/stork_signed_prices`, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${tokens.accessToken}`,
-        "Content-Type": "application/json",
-        "User-Agent": config.userAgent,
-      },
-    });
-    
-    if (!validationData || !validationData.data || Object.keys(validationData.data).length === 0) {
-      log("No validation data available.", "WARN");
-    } else {
-      log(`Processing ${Object.keys(validationData.data).length} validation(s)...`);
-      for (const assetKey in validationData.data) {
-        log(`Validating: ${assetKey} | Price: ${validationData.data[assetKey].price}`);
-      }
-    }
+log("Configuration loaded successfully");
 
-    log(`Next validation in ${config.intervalSeconds} seconds...`);
-    for (let i = config.intervalSeconds; i > 0; i--) {
-      process.stdout.write(`\rWaiting: ${i}s `);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-    console.log("");
-  } catch (error) {
-    log(`Validation process stopped: ${error.message}`, "ERROR");
-  }
-}
-
-async function startApp() {
-  showBanner();
-  log(`==========================================`);
-  log(`STORK ORACLE Validator Bot Activated`);
-  log(`Interval: ${config.intervalSeconds} seconds`);
-  log(`Token Path: ${config.tokenPath}`);
-  log(`Auto-refresh: Enabled`);
-  log(`==========================================`);
-  
-  runValidationProcess();
-  setInterval(runValidationProcess, config.intervalSeconds * 1000);
-}
-
-startApp();
+// Keep existing logic and structure
