@@ -11,6 +11,17 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const config = {
+  stork: {
+    baseURL: "https://app-api.jp.stork-oracle.network/v1",
+    authURL: "https://api.jp.stork-oracle.network/auth",
+    tokenPath: path.join(__dirname, "tokens.json"),
+    intervalSeconds: 10,
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+    origin: "chrome-extension://knnliglhgkmlblppdejchidfihjnockl",
+  },
+};
+
 function showBanner() {
   console.log(`\n==========================================`);
   console.log(`=            Kite AI Auto Bot            =`);
@@ -71,7 +82,7 @@ async function main() {
     
     const userData = await getUserStats(tokens);
     if (userData) {
-      log(`REPORTING`, "INFO");
+      log("REPORTING", "INFO");
       log(`✔ VERIFIED MESSAGES: ${userData.stats.stork_signed_prices_valid_count || 0}`);
       log(`✖ INVALID MESSAGES: ${userData.stats.stork_signed_prices_invalid_count || 0}`);
       log("==========================================");
