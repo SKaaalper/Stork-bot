@@ -113,8 +113,13 @@ async function main() {
     const userData = await getUserStats(tokens);
     if (userData) {
       log("REPORTING", "INFO");
+      log(`📧 USER EMAIL: ${userData.email || "Unknown"}`);
       log(`✔ VERIFIED MESSAGES: ${userData.stats.stork_signed_prices_valid_count || 0}`);
       log(`✖ INVALID MESSAGES: ${userData.stats.stork_signed_prices_invalid_count || 0}`);
+      log("Validation Results:");
+      userData.stats.stork_signed_prices_validations.forEach((validation) => {
+        log(`🔹 ${validation.asset}: ${validation.price} USD | Status: ${validation.status}`);
+      });
       log("==========================================");
     }
   }, config.stork.intervalSeconds * 1000);
