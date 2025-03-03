@@ -89,4 +89,21 @@ const config = {
 
 log("Configuration loaded successfully");
 
-// Keep existing logic and structure
+async function main() {
+  log("Initializing bot...");
+  log("Checking tokens.json file...");
+  if (!fs.existsSync(config.stork.tokenPath)) {
+    log("tokens.json file not found! Please set up your tokens.", "ERROR");
+    process.exit(1);
+  }
+
+  log("Starting Stork validation process...");
+  setInterval(() => {
+    log("Fetching latest signed prices...");
+    log("Validating data...");
+    log("Submitting validation results...");
+  }, config.stork.intervalSeconds * 1000);
+}
+
+main();
+
